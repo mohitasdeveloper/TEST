@@ -65,3 +65,43 @@ export async function compressImage(file, maxWidth = 1080, quality = 0.7) {
         reader.onerror = (error) => reject(error);
     });
 }
+// ==========================================
+// OFFLINE STORAGE ENGINE (IndexedDB)
+// ==========================================
+export async function initDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open('ECampusDB', 1);
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('feed_cache')) {
+                db.createObjectStore('feed_cache', { keyPath: 'id' });
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject('Could not open IndexedDB');
+    });
+}
+
+export async function saveFeedToCache(posts) {
+    const db = await initDB();
+    const tx = db.transaction('feed_cache', 'readwrite');
+    const store = tx.objectStore('feed_cache');
+    // Clear old cache and save new posts
+    store.clear(); 
+    posts.forEach(post => store.put(post));
+}
+
+export async function getFeedFromCache() {
+    const db = await initDB();
+    return new Promise((resolve) => {
+        const tx = db.transaction('feed_cache', 'readonly');
+        const store = tx.objectStore('feed_cache');
+        const request = store.getAll();
+        request.onsuccess = () => {
+            // Sort by created_at descending
+            const posts = request.result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            resolve(posts);
+        };
+        request.onerror = () => resolve([]);
+    });
+}
