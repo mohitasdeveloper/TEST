@@ -1,6 +1,6 @@
 import { supabase } from './supabase.js';
 import { showToast } from './ui.js';
-import { timeAgo, compressImage } from './utils.js';
+import { timeAgo, compressImage, saveFeedToCache, getFeedFromCache } from './utils.js';
 import { CLOUDINARY_CLOUD_NAME } from './config.js';
 
 let currentUser = null;
