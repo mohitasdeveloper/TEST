@@ -185,23 +185,34 @@ async function performSearch(query) {
 
         let html = '';
 
-        // Inject UI Content based on Active Tab
+      // Inject UI Content based on Active Tab
         if (currentSearchTab === 'all') {
             if (allUsers.length === 0 && servicesData.length === 0) {
                 container.innerHTML = getEmptyStateHTML(query);
                 return;
             }
-            if (servicesData.length > 0) {
-                html += `<h4 class="text-[13px] font-extrabold text-on-surface dark:text-gray-100 mb-2 mt-2">Services</h4>`;
-                html += renderServiceList(servicesData.slice(0, 5));
-            }
+
+            let isFirstSection = true;
+
+            // 1. Pages First
             if (pagesData.length > 0) {
-                html += `<h4 class="text-[13px] font-extrabold text-on-surface dark:text-gray-100 mb-2 mt-4">Pages</h4>`;
+                html += `<h4 class="text-[13px] font-extrabold text-on-surface dark:text-gray-100 mb-2 ${isFirstSection ? 'mt-2' : 'mt-4'}">Pages</h4>`;
                 html += renderUserList(pagesData.slice(0, 5));
+                isFirstSection = false;
             }
+
+            // 2. Students (Users) Second
             if (studentsData.length > 0) {
-                html += `<h4 class="text-[13px] font-extrabold text-on-surface dark:text-gray-100 mb-2 mt-4">Users</h4>`;
+                html += `<h4 class="text-[13px] font-extrabold text-on-surface dark:text-gray-100 mb-2 ${isFirstSection ? 'mt-2' : 'mt-4'}">Users</h4>`;
                 html += renderUserList(studentsData.slice(0, 5));
+                isFirstSection = false;
+            }
+
+            // 3. Services Third
+            if (servicesData.length > 0) {
+                html += `<h4 class="text-[13px] font-extrabold text-on-surface dark:text-gray-100 mb-2 ${isFirstSection ? 'mt-2' : 'mt-4'}">Services</h4>`;
+                html += renderServiceList(servicesData.slice(0, 5));
+                isFirstSection = false;
             }
         } else if (currentSearchTab === 'users') {
             if (studentsData.length === 0) return container.innerHTML = getEmptyStateHTML(query, 'Users');
