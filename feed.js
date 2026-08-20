@@ -372,13 +372,13 @@ async function submitPost() {
     }
 }
 
-let currentFeedPage = 0;
+let lastPostDate = null; // We use a date cursor instead of page numbers now
 const POSTS_PER_PAGE = 7; 
 let isFetchingFeed = false;
 let hasMorePosts = true;
 
 window.refreshMainFeed = async function() {
-    currentFeedPage = 0;
+    lastPostDate = null; // Reset the cursor on refresh
     hasMorePosts = true;
     const container = document.getElementById('feed-posts-container');
     if (container) container.innerHTML = FEED_SKELETON;
@@ -389,11 +389,10 @@ async function fetchPosts(isRefresh = false) {
     if (isFetchingFeed || (!hasMorePosts && !isRefresh)) return;
     isFetchingFeed = true;
 
-    const from = currentFeedPage * POSTS_PER_PAGE;
-    const to = from + POSTS_PER_PAGE - 1;
-
     try {
         const blockedIds = await window.getBlockedUserIds(currentUser.id);
+        
+        // 1. Build the base query using .limit() instead of .range()
         let query = supabase
             .from('posts')
             .select(`
@@ -413,7 +412,12 @@ async function fetchPosts(isRefresh = false) {
             .eq('users.is_deleted', false)
             .eq('users.is_deactivated', false)
             .order('created_at', { ascending: false })
-            .range(from, to);
+            .limit(POSTS_PER_PAGE);
+
+        // 2. Apply Cursor: If scrolling down, fetch posts older than the last one we saw
+        if (lastPostDate && !isRefresh) {
+            query = query.lt('created_at', lastPostDate);
+        }
 
         if (blockedIds.length > 0) {
             query = query.not('user_id', 'in', `(${blockedIds.join(',')})`);
@@ -421,6 +425,11 @@ async function fetchPosts(isRefresh = false) {
 
         const { data, error } = await query;
         if (error) throw error;
+
+        // 3. Update the cursor for the next scroll
+        if (data.length > 0) {
+            lastPostDate = data[data.length - 1].created_at;
+        }
 
         if (data.length < POSTS_PER_PAGE) hasMorePosts = false;
 
@@ -430,7 +439,7 @@ async function fetchPosts(isRefresh = false) {
         renderPosts(data, isRefresh);
 
         // 🚀 INJECT SUGGESTIONS WIDGET ON FIRST LOAD AFTER 1ST POST
-        if (isRefresh && currentFeedPage === 0) {
+        if (isRefresh) {
             setTimeout(async () => {
                 const suggestions = await fetchUserSuggestions();
                 if (suggestions.length > 0) {
@@ -444,10 +453,8 @@ async function fetchPosts(isRefresh = false) {
                         container.insertAdjacentHTML('afterbegin', suggestionsHtml);
                     }
                 }
-            }, 800); // Wait almost 1 sec so feed content renders fully first
+            }, 800);
         }
-
-        currentFeedPage++;
         
         if (hasMorePosts) setupIntersectionObserver();
 
@@ -457,14 +464,13 @@ async function fetchPosts(isRefresh = false) {
             const container = document.getElementById('feed-posts-container');
             if (container) container.innerHTML = `<p class="text-center py-10 text-error">Failed to load feed.</p>`;
         } else {
-            showToast('Network error. Scroll down to retry.', 'error');
+            import('./ui.js').then(({ showToast }) => showToast('Network error. Scroll down to retry.', 'error'));
             if (hasMorePosts) setupIntersectionObserver();
         }
     } finally {
         isFetchingFeed = false;
     }
 }
-
 // ==========================================
 // 🚀 NEW: SUGGESTIONS ENGINE
 // ==========================================
