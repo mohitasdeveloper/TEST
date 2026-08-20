@@ -109,11 +109,11 @@ function getTickHtml(tickType) {
 // Search across all users and services
 let latestSearchToken = 0; // Tracks the most recent search
 
-// Search across all users and services
+// Search across users (name, course, role) and services (title, desc, author)
 async function performSearch(query) {
     const container = document.getElementById('search-results-container');
     
-    // Increment token for this specific search
+    // Increment token for this specific search to prevent race conditions
     latestSearchToken++;
     const thisSearchToken = latestSearchToken;
     
@@ -121,21 +121,26 @@ async function performSearch(query) {
         const blockedIds = await window.getBlockedUserIds(currentUser.id);
         const excludeIds = [currentUser.id, ...blockedIds];
 
+        // Clean query for PostgREST 'or' syntax (commas break the array logic)
+        const safeQuery = query.replace(/,/g, ' ');
+
         // Run both queries simultaneously for speed
-        const [usersRes, servicesRes] = await Promise.all([
+        const [usersRes, servicesByTextRes] = await Promise.all([
+            // 1. Search Users: Name, Course, or User Type (Role)
             supabase
                 .from('users')
                 .select('id, full_name, profile_img_url, course, tick_type, role')
-                .ilike('full_name', `%${query}%`)
+                .or(`full_name.ilike.%${safeQuery}%,course.ilike.%${safeQuery}%,role.ilike.%${safeQuery}%`)
                 .eq('is_deleted', false)
                 .eq('is_deactivated', false)
                 .not('id', 'in', `(${excludeIds.join(',')})`)
                 .limit(20),
             
+            // 2. Search Services: Title or Description
             supabase
                 .from('page_services')
                 .select('id, title, description, icon_name, url, open_in_app, page_id, users!inner(full_name, is_deleted, is_deactivated)')
-                .ilike('title', `%${query}%`)
+                .or(`title.ilike.%${safeQuery}%,description.ilike.%${safeQuery}%`)
                 .eq('is_active', true)
                 .eq('users.is_deleted', false)
                 .eq('users.is_deactivated', false)
@@ -144,17 +149,43 @@ async function performSearch(query) {
         ]);
 
         if (usersRes.error) throw usersRes.error;
-        if (servicesRes.error) throw servicesRes.error;
+        if (servicesByTextRes.error) throw servicesByTextRes.error;
+        
         // If a new search started while we were waiting for the database, abort this one!
         if (thisSearchToken !== latestSearchToken) return;
 
         const allUsers = usersRes.data || [];
+        
+        // 3. Search Services By Author ("by__"):
+        // If the query matched a Page's name, fetch their services too!
+        const matchedPageIds = allUsers.filter(u => u.role === 'page').map(u => u.id);
+        let additionalServices = [];
+        
+        if (matchedPageIds.length > 0) {
+            const { data: authorServices } = await supabase
+                .from('page_services')
+                .select('id, title, description, icon_name, url, open_in_app, page_id, users!inner(full_name, is_deleted, is_deactivated)')
+                .in('page_id', matchedPageIds)
+                .eq('is_active', true)
+                .eq('users.is_deleted', false)
+                .eq('users.is_deactivated', false);
+                
+            if (authorServices) additionalServices = authorServices;
+        }
+
+        // Combine and deduplicate all service results
+        const servicesDataMap = new Map();
+        [...(servicesByTextRes.data || []), ...additionalServices].forEach(svc => {
+            servicesDataMap.set(svc.id, svc);
+        });
+        const servicesData = Array.from(servicesDataMap.values());
+
         const studentsData = allUsers.filter(u => u.role !== 'page');
         const pagesData = allUsers.filter(u => u.role === 'page');
-        const servicesData = servicesRes.data || [];
 
         let html = '';
 
+        // Inject UI Content based on Active Tab
         if (currentSearchTab === 'all') {
             if (allUsers.length === 0 && servicesData.length === 0) {
                 container.innerHTML = getEmptyStateHTML(query);
