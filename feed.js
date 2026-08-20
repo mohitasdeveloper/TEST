@@ -392,6 +392,23 @@ async function fetchPosts(isRefresh = false) {
     if (isFetchingFeed || (!hasMorePosts && !isRefresh)) return;
     isFetchingFeed = true;
 
+    // 🚀 OFFLINE INTERCEPTOR: Load from Cache if no internet
+    if (!navigator.onLine) {
+        import('./ui.js').then(({ showToast }) => showToast('You are offline. Showing saved posts.', 'warning'));
+        try {
+            const cachedPosts = await getFeedFromCache();
+            const oldSentinel = document.getElementById('feed-bottom-sentinel');
+            if (oldSentinel) oldSentinel.remove();
+            
+            renderPosts(cachedPosts, true);
+        } catch (e) {
+            console.error("Offline cache error:", e);
+        } finally {
+            isFetchingFeed = false;
+        }
+        return;
+    }
+
     try {
         const blockedIds = await window.getBlockedUserIds(currentUser.id);
         
@@ -440,6 +457,15 @@ async function fetchPosts(isRefresh = false) {
         if (oldSentinel) oldSentinel.remove();
 
         renderPosts(data, isRefresh);
+
+        // 🚀 SAVE TO OFFLINE CACHE (Only cache the first page so we don't overload storage)
+        if (isRefresh && data.length > 0) {
+            try {
+                saveFeedToCache(data);
+            } catch (cacheErr) {
+                console.error("Failed to save to cache:", cacheErr);
+            }
+        }
 
         // 🚀 INJECT SUGGESTIONS WIDGET ON FIRST LOAD AFTER 1ST POST
         if (isRefresh) {
