@@ -94,6 +94,9 @@ export function initFeed(user) {
     setupImagePreviews();
     setupLikesModalTouchPhysics();
     
+    // 🚀 NEW: Initialize the Realtime listener for new posts
+    setupRealtimeFeed();
+    
     document.addEventListener('openCreatePostView', () => {
         if(currentUser) {
             document.getElementById('create-post-avatar').src = currentUser.profile_img_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.full_name)}&background=e1e3e4`;
@@ -2327,3 +2330,38 @@ window.setPollDeadline = function(val, label) {
     window.togglePollDeadlineInputs();
     window.closeActionSheet();
 };
+// ==========================================
+// 🚀 SUPABASE REALTIME ENGINE
+// ==========================================
+function setupRealtimeFeed() {
+    if (!currentUser) return;
+
+    // Listen for new rows inserted into the 'posts' table
+    supabase
+        .channel('public-posts-channel')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, payload => {
+            // Ignore the event if the new post was created by the currently logged-in user
+            if (payload.new.user_id === currentUser.id) return;
+
+            const container = document.getElementById('feed-posts-container');
+            if (!container) return;
+
+            // Don't spawn multiple pills if multiple posts come in quickly
+            if (document.getElementById('new-posts-pill')) return;
+
+            // Create a sticky floating pill button
+            const pillHtml = `
+                <div id="new-posts-pill" class="flex justify-center w-full sticky top-2 z-[60] animate-fadeIn mb-4">
+                    <button onclick="window.scrollTo({ top: 0, behavior: 'smooth' }); window.refreshMainFeed(); this.parentElement.remove();" 
+                            class="bg-primary text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg flex items-center gap-2 active:scale-95 transition-transform border-2 border-surface dark:border-[#1e1e1e]">
+                        <span class="material-symbols-outlined text-[18px]">arrow_upward</span>
+                        New posts
+                    </button>
+                </div>
+            `;
+            
+            // Inject it at the very top of the feed container
+            container.insertAdjacentHTML('afterbegin', pillHtml);
+        })
+        .subscribe();
+}
