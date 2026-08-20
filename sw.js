@@ -1,23 +1,22 @@
 const CACHE_NAME = 'ecampus-cache-v1';
 const STATIC_ASSETS = [
-    '/',
-    '/index.html',
-    '/style.css',
-    '/main.js',
-    '/feed.js',
-    '/hotposts.js',
-    '/search.js',
-    '/updates.js',
-    '/notifications.js',
-    '/utils.js',
-    '/ui.js',
-    '/config.js',
-    '/supabase.js',
+    './',
+    './index.html',
+    './style.css',
+    './main.js',
+    './feed.js',
+    './hotposts.js',
+    './search.js',
+    './updates.js',
+    './notifications.js',
+    './utils.js',
+    './ui.js',
+    './config.js',
+    './supabase.js',
     'https://cdn.tailwindcss.com?plugins=forms,container-queries',
     'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Courgette&display=swap',
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css'
 ];
-
 // 1. Install & Cache Static Assets
 self.addEventListener('install', (event) => {
     event.waitUntil(
