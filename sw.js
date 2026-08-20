@@ -12,10 +12,7 @@ const STATIC_ASSETS = [
     './utils.js',
     './ui.js',
     './config.js',
-    './supabase.js',
-    'https://cdn.tailwindcss.com?plugins=forms,container-queries',
-    'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Courgette&display=swap',
-    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css'
+    './supabase.js'
 ];
 // 1. Install & Cache Static Assets
 self.addEventListener('install', (event) => {
