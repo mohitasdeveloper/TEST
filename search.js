@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js';
-
+import { saveSuggestionsToCache, getSuggestionsFromCache } from './utils.js'; // <-- NEW
 let currentUser = null;
 let searchTimeout = null;
 let currentSearchTab = 'all';
@@ -298,6 +298,21 @@ async function fetchExploreUsers() {
     
     container.innerHTML = `<h3 class="text-[14px] font-bold text-on-surface dark:text-gray-100 mb-2 mt-1">Suggested for you</h3>` + LIST_SKELETON;
 
+    // 🚀 OFFLINE INTERCEPTOR
+    if (!navigator.onLine) {
+        try {
+            const cachedUsers = await getSuggestionsFromCache();
+            if (cachedUsers.length > 0) {
+                let html = `<h3 class="text-[14px] font-bold text-on-surface dark:text-gray-100 mb-2 mt-1">Suggested for you</h3>`;
+                html += renderUserList(cachedUsers);
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = `<p class="text-sm italic text-center py-4 text-on-surface-variant dark:text-gray-400">No suggestions available offline.</p>`;
+            }
+        } catch (e) { console.error(e); }
+        return;
+    }
+
     try {
         const blockedIds = await window.getBlockedUserIds(currentUser.id);
         const excludeIds = [currentUser.id, ...blockedIds];
@@ -333,6 +348,9 @@ async function fetchExploreUsers() {
         }
         
         container.innerHTML = html;
+
+        // 🚀 SAVE TO OFFLINE CACHE
+        saveSuggestionsToCache(combinedData);
 
     } catch (err) {
         console.error('Error fetching explore users:', err);
