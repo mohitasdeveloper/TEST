@@ -222,44 +222,26 @@ window.executeContextualRefresh = async function() {
 };
 
 // 🚀 NEW: Dedicated function to sync your profile data with the database natively
+// 🚀 NEW: Dedicated function to sync your profile data with the database natively
 window.refreshMyProfile = async function() {
     if (!currentUserProfile) return;
-    try {
-       // 2. Fetch user profile (Smart Offline Fallback)
-    let profile = null;
+    
+    // Do NOT attempt to refresh the profile if the user is currently offline
+    if (!navigator.onLine) return; 
 
     try {
-        const { data, error } = await supabase
+        const { data: profile, error } = await supabase
             .from('users')
             .select('*')
-            .eq('auth_user_id', session.user.id)
+            .eq('id', currentUserProfile.id)
             .single();
-
-        if (error || !data) throw error;
         
-        // Save to cache for offline use
-        profile = data;
+        if (error) throw error;
+        
+        currentUserProfile = profile;
         localStorage.setItem('ecampus_profile_cache', JSON.stringify(profile));
-
-    } catch (error) {
-        console.error('Error fetching profile from DB:', error);
         
-        // Try to load from offline cache
-        const cachedProfile = localStorage.getItem('ecampus_profile_cache');
-        if (cachedProfile) {
-            profile = JSON.parse(cachedProfile);
-            console.log("Loaded profile from offline cache.");
-        } else {
-            // Only sign out if we have NO internet AND NO cached profile
-            showToast('Could not load your profile. Please try logging in again.', 'error');
-            await supabase.auth.signOut();
-            window.location.replace('auth/login.html');
-            return;
-        }
-    }
-
-    currentUserProfile = profile;
-        populateProfileUI(currentUserProfile); // This automatically calls fetchMyProfileFeed internally!
+        populateProfileUI(currentUserProfile); 
     } catch (err) {
         console.error("Error refreshing profile:", err);
     }
@@ -370,31 +352,46 @@ const LIST_SKELETON = `
 // APP INITIALIZATION & LAYOUT
 // ========================================================
 document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Check user sessions
-    const { data: { session } } = await supabase.auth.getSession();
+  // 1. Check user sessions
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
-    if (!session) {
-        window.location.href = "./auth/login.html";
+    // If there is strictly no session, go to login.
+    if (sessionError || !session) {
+        window.location.replace("./auth/login.html");
         return;
     }
 
-    // 2. Fetch user profile
-    const { data: profile, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('auth_user_id', session.user.id)
-        .single();
+    // 2. Fetch user profile (Smart Offline Fallback)
+    let profile = null;
 
-    if (error || !profile) {
-        console.error('Error fetching profile:', error);
-        showToast('Could not load your profile. Please try logging in again.', 'error');
-        await supabase.auth.signOut();
-        window.location.replace('auth/login.html');
-        return;
+    try {
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('auth_user_id', session.user.id)
+            .single();
+
+        if (error || !data) throw error;
+        
+        profile = data;
+        localStorage.setItem('ecampus_profile_cache', JSON.stringify(profile));
+
+    } catch (error) {
+        console.error('Error fetching profile from DB:', error);
+        
+        // If offline, silently load the cached profile
+        const cachedProfile = localStorage.getItem('ecampus_profile_cache');
+        if (cachedProfile) {
+            profile = JSON.parse(cachedProfile);
+        } else {
+            // ONLY log out if there is no internet AND no cache exists on the phone
+            await supabase.auth.signOut();
+            window.location.replace('./auth/login.html');
+            return;
+        }
     }
 
     currentUserProfile = profile;
-
     // 🚀 HOTFIX: Prevent verification screen flash on boot
     const verifyView = document.getElementById('view-verification');
     if (verifyView) verifyView.style.setProperty('display', 'none', 'important');
