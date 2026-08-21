@@ -117,7 +117,7 @@
 <body class="bg-surface dark:bg-[#121212] text-on-surface dark:text-gray-100 antialiased mb-24 relative overflow-x-hidden transition-colors duration-300 selection:bg-primary/20 overflow-hidden overscroll-y-none">
 
 <!-- SMART OFFLINE BANNER -->
-    <div id="smart-offline-banner" class="fixed top-0 left-0 w-full bg-error text-white text-[12px] font-bold py-1.5 text-center z-[10000] hidden shadow-sm tracking-wide">
+    <div id="smart-offline-banner" class="fixed top-[max(0px,env(safe-area-inset-top))] left-0 w-full text-white text-[13px] font-bold py-1.5 text-center z-[10000] hidden shadow-sm tracking-wide transition-colors duration-300">
         No Internet Connection
     </div>
       <div id="ptr-container" class="fixed top-0 left-1/2 z-[9999] flex items-center justify-center gap-2 bg-surface dark:bg-[#1e1e1e] border border-surface-variant/50 dark:border-neutral-800 shadow-[0_10px_40px_rgba(0,0,0,0.3)] rounded-full px-5 py-2.5 opacity-0 pointer-events-none" style="transform: translate(-50%, -100px); will-change: transform, opacity;">
@@ -2271,20 +2271,31 @@ window.setVisibility = function(val, icon, label) {
             document.getElementById('post-viewers-label').innerHTML = `<span class="material-symbols-outlined text-[13px]">${icon}</span> ${compactLabel}`;
             window.closeActionSheet();
         };
-// 🚀 SMART OFFLINE BANNER LOGIC
-        function toggleOfflineBanner() {
+// 🚀 SMART OFFLINE BANNER LOGIC (With Reconnect Refresh)
+        function toggleOfflineBanner(e) {
             const banner = document.getElementById('smart-offline-banner');
+            
             if (!navigator.onLine) {
-                banner.classList.remove('hidden');
+                // Device went offline
+                banner.textContent = 'No Internet Connection';
+                banner.className = 'fixed top-[max(0px,env(safe-area-inset-top))] left-0 w-full bg-error text-white text-[13px] font-bold py-1.5 text-center z-[10000] shadow-sm tracking-wide transition-colors duration-300';
+            } else if (e && e.type === 'online') {
+                // Device reconnected
+                banner.textContent = 'Back Online';
+                banner.classList.replace('bg-error', 'bg-green-500');
+                
+                // Wait 1.5 seconds so they see it's back online, then refresh the app to sync everything
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
             } else {
+                // Initial boot with internet
                 banner.classList.add('hidden');
             }
         }
 
         window.addEventListener('online', toggleOfflineBanner);
         window.addEventListener('offline', toggleOfflineBanner);
-        
-        // Check on boot
         toggleOfflineBanner();
 
         // 🚀 REGISTER SERVICE WORKER
