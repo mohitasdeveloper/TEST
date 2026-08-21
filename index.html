@@ -2271,31 +2271,44 @@ window.setVisibility = function(val, icon, label) {
             document.getElementById('post-viewers-label').innerHTML = `<span class="material-symbols-outlined text-[13px]">${icon}</span> ${compactLabel}`;
             window.closeActionSheet();
         };
-// 🚀 SMART OFFLINE BANNER LOGIC (With Reconnect Refresh)
+// 🚀 SMART OFFLINE BANNER LOGIC (With Reconnect Refresh & Header Push)
         function toggleOfflineBanner(e) {
             const banner = document.getElementById('smart-offline-banner');
+            const header = document.querySelector('header');
             
+            // Add a smooth transition to the header so it slides down gracefully
+            if (header) header.style.transition = 'margin-top 0.3s ease';
+
             if (!navigator.onLine) {
                 // Device went offline
                 banner.textContent = 'No Internet Connection';
                 banner.className = 'fixed top-[max(0px,env(safe-area-inset-top))] left-0 w-full bg-error text-white text-[13px] font-bold py-1.5 text-center z-[10000] shadow-sm tracking-wide transition-colors duration-300';
+                
+                // Push the header down by the exact height of the banner (approx 32px)
+                if (header) header.style.marginTop = '32px';
+                
             } else if (e && e.type === 'online') {
                 // Device reconnected
                 banner.textContent = 'Back Online';
                 banner.classList.replace('bg-error', 'bg-green-500');
+                if (header) header.style.marginTop = '32px';
                 
                 // Wait 1.5 seconds so they see it's back online, then refresh the app to sync everything
                 setTimeout(() => {
                     window.location.reload();
                 }, 1500);
+                
             } else {
                 // Initial boot with internet
                 banner.classList.add('hidden');
+                if (header) header.style.marginTop = '0px';
             }
         }
 
         window.addEventListener('online', toggleOfflineBanner);
         window.addEventListener('offline', toggleOfflineBanner);
+        
+        // Check on boot
         toggleOfflineBanner();
 
         // 🚀 REGISTER SERVICE WORKER
