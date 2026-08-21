@@ -38,19 +38,35 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// 3. Intercept Fetch Requests (Cache-First for Static, Network-First for API)
+// 3. Intercept Fetch Requests (Cache media, handle offline)
 self.addEventListener('fetch', (event) => {
-    // Ignore Supabase API requests (we will handle database caching manually)
-    if (event.request.url.includes('supabase.co')) return;
+    const url = event.request.url;
+
+    // Ignore Supabase API calls (we cache the JSON using IndexedDB)
+    if (url.includes('supabase.co/rest')) return;
 
     event.respondWith(
         caches.match(event.request).then((cachedResponse) => {
+            // Return cached version if we have it
             if (cachedResponse) return cachedResponse;
-            return fetch(event.request).catch(() => {
-                // If network fails and it's an HTML page, return the cached index.html
-                if (event.request.mode === 'navigate') {
-                    return caches.match('/index.html');
+
+            // Otherwise, fetch from the network
+            return fetch(event.request).then((networkResponse) => {
+                // 🚀 DYNAMIC MEDIA CACHING: If it's an image/video from Cloudinary or UI-Avatars, save a copy!
+                if (url.includes('cloudinary.com') || url.includes('ui-avatars.com')) {
+                    const responseClone = networkResponse.clone();
+                    caches.open('ecampus-media-cache-v1').then((cache) => {
+                        cache.put(event.request, responseClone);
+                    });
                 }
+                return networkResponse;
+            }).catch(() => {
+                // 🚀 CRASH FIX: Return fallback responses when completely offline
+                if (event.request.mode === 'navigate') {
+                    return caches.match('./index.html');
+                }
+                // Return a dummy empty response to prevent "TypeError: Failed to convert value to Response"
+                return new Response('', { status: 503, statusText: 'Offline' });
             });
         })
     );
