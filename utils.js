@@ -70,11 +70,20 @@ export async function compressImage(file, maxWidth = 1080, quality = 0.7) {
 // ==========================================
 export async function initDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('ECampusDB', 1);
+        // Increased version to 2 to trigger database upgrade
+        const request = indexedDB.open('ECampusDB', 2);
+        
         request.onupgradeneeded = (e) => {
             const db = e.target.result;
             if (!db.objectStoreNames.contains('feed_cache')) {
                 db.createObjectStore('feed_cache', { keyPath: 'id' });
+            }
+            // 🚀 NEW: Add tables for Hotposts and Updates
+            if (!db.objectStoreNames.contains('hotposts_cache')) {
+                db.createObjectStore('hotposts_cache', { keyPath: 'user_id' }); 
+            }
+            if (!db.objectStoreNames.contains('updates_cache')) {
+                db.createObjectStore('updates_cache', { keyPath: 'id' });
             }
         };
         request.onsuccess = () => resolve(request.result);
@@ -86,7 +95,6 @@ export async function saveFeedToCache(posts) {
     const db = await initDB();
     const tx = db.transaction('feed_cache', 'readwrite');
     const store = tx.objectStore('feed_cache');
-    // Clear old cache and save new posts
     store.clear(); 
     posts.forEach(post => store.put(post));
 }
@@ -98,10 +106,49 @@ export async function getFeedFromCache() {
         const store = tx.objectStore('feed_cache');
         const request = store.getAll();
         request.onsuccess = () => {
-            // Sort by created_at descending
             const posts = request.result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
             resolve(posts);
         };
+        request.onerror = () => resolve([]);
+    });
+}
+
+// 🚀 NEW: Hotposts Cache Helpers
+export async function saveHotpostsToCache(hotpostsByUserArray) {
+    const db = await initDB();
+    const tx = db.transaction('hotposts_cache', 'readwrite');
+    const store = tx.objectStore('hotposts_cache');
+    store.clear(); 
+    hotpostsByUserArray.forEach(item => store.put(item));
+}
+
+export async function getHotpostsFromCache() {
+    const db = await initDB();
+    return new Promise((resolve) => {
+        const tx = db.transaction('hotposts_cache', 'readonly');
+        const store = tx.objectStore('hotposts_cache');
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve([]);
+    });
+}
+
+// 🚀 NEW: Updates Cache Helpers
+export async function saveUpdatesToCache(updates) {
+    const db = await initDB();
+    const tx = db.transaction('updates_cache', 'readwrite');
+    const store = tx.objectStore('updates_cache');
+    store.clear(); 
+    updates.forEach(update => store.put(update));
+}
+
+export async function getUpdatesFromCache() {
+    const db = await initDB();
+    return new Promise((resolve) => {
+        const tx = db.transaction('updates_cache', 'readonly');
+        const store = tx.objectStore('updates_cache');
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
         request.onerror = () => resolve([]);
     });
 }
