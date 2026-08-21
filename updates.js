@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js';
-
+import { saveUpdatesToCache, getUpdatesFromCache } from './utils.js'; // <-- NEW
 // Professional Shimmer Skeleton for Campus Updates
 const UPDATES_SKELETON = `
     <div class="bg-white dark:bg-neutral-900 rounded-3xl p-5 border border-gray-200 dark:border-neutral-800 shadow-sm mb-4 animate-pulse">
@@ -18,8 +18,16 @@ async function fetchUpdates() {
     const container = document.getElementById('updates-container');
     if (!container) return;
 
-    // Show Shimmer Skeleton instantly before fetching
     container.innerHTML = UPDATES_SKELETON;
+
+    // 🚀 OFFLINE INTERCEPTOR
+    if (!navigator.onLine) {
+        try {
+            const cachedUpdates = await getUpdatesFromCache();
+            renderUpdates(cachedUpdates);
+        } catch(e) { console.error("Offline updates error:", e); }
+        return;
+    }
 
     try {
         const { data, error } = await supabase
@@ -30,6 +38,9 @@ async function fetchUpdates() {
         if (error) throw error;
 
         renderUpdates(data);
+        
+        // 🚀 SAVE TO OFFLINE CACHE
+        saveUpdatesToCache(data);
 
     } catch (error) {
         console.error('Error fetching campus updates:', error);
