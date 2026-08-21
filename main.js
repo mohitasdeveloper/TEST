@@ -1,6 +1,7 @@
 import { initHotposts } from './hotposts.js';
 import { showToast } from './ui.js';
-import { timeAgo, getActionQueue, clearAction } from './utils.js'; // <-- Updatedimport { supabase } from './supabase.js';
+import { timeAgo, getActionQueue, clearAction } from './utils.js';
+import { supabase } from './supabase.js';
 import { initFeed } from './feed.js';
 import { initSearch } from './search.js';
 import { initNotifications } from './notifications.js';
