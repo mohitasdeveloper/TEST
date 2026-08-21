@@ -70,85 +70,99 @@ export async function compressImage(file, maxWidth = 1080, quality = 0.7) {
 // ==========================================
 export async function initDB() {
     return new Promise((resolve, reject) => {
-        // Increased version to 2 to trigger database upgrade
-        const request = indexedDB.open('ECampusDB', 2);
+        // Increased version to 3 to trigger database upgrade
+        const request = indexedDB.open('ECampusDB', 3);
         
         request.onupgradeneeded = (e) => {
             const db = e.target.result;
-            if (!db.objectStoreNames.contains('feed_cache')) {
-                db.createObjectStore('feed_cache', { keyPath: 'id' });
-            }
-            // 🚀 NEW: Add tables for Hotposts and Updates
-            if (!db.objectStoreNames.contains('hotposts_cache')) {
-                db.createObjectStore('hotposts_cache', { keyPath: 'user_id' }); 
-            }
-            if (!db.objectStoreNames.contains('updates_cache')) {
-                db.createObjectStore('updates_cache', { keyPath: 'id' });
-            }
+            if (!db.objectStoreNames.contains('feed_cache')) db.createObjectStore('feed_cache', { keyPath: 'id' });
+            if (!db.objectStoreNames.contains('hotposts_cache')) db.createObjectStore('hotposts_cache', { keyPath: 'user_id' }); 
+            if (!db.objectStoreNames.contains('updates_cache')) db.createObjectStore('updates_cache', { keyPath: 'id' });
+            // 🚀 NEW: Caches for Suggestions and Notifications
+            if (!db.objectStoreNames.contains('suggestions_cache')) db.createObjectStore('suggestions_cache', { keyPath: 'id' });
+            if (!db.objectStoreNames.contains('notifications_cache')) db.createObjectStore('notifications_cache', { keyPath: 'id' });
         };
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject('Could not open IndexedDB');
     });
 }
 
+// --- FEED CACHE ---
 export async function saveFeedToCache(posts) {
     const db = await initDB();
     const tx = db.transaction('feed_cache', 'readwrite');
-    const store = tx.objectStore('feed_cache');
-    store.clear(); 
-    posts.forEach(post => store.put(post));
+    tx.objectStore('feed_cache').clear(); 
+    posts.forEach(post => tx.objectStore('feed_cache').put(post));
 }
-
 export async function getFeedFromCache() {
     const db = await initDB();
-    return new Promise((resolve) => {
-        const tx = db.transaction('feed_cache', 'readonly');
-        const store = tx.objectStore('feed_cache');
-        const request = store.getAll();
-        request.onsuccess = () => {
-            const posts = request.result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-            resolve(posts);
-        };
-        request.onerror = () => resolve([]);
+    return new Promise(resolve => {
+        const req = db.transaction('feed_cache', 'readonly').objectStore('feed_cache').getAll();
+        req.onsuccess = () => resolve(req.result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+        req.onerror = () => resolve([]);
     });
 }
 
-// 🚀 NEW: Hotposts Cache Helpers
+// --- HOTPOSTS CACHE ---
 export async function saveHotpostsToCache(hotpostsByUserArray) {
     const db = await initDB();
     const tx = db.transaction('hotposts_cache', 'readwrite');
-    const store = tx.objectStore('hotposts_cache');
-    store.clear(); 
-    hotpostsByUserArray.forEach(item => store.put(item));
+    tx.objectStore('hotposts_cache').clear(); 
+    hotpostsByUserArray.forEach(item => tx.objectStore('hotposts_cache').put(item));
 }
-
 export async function getHotpostsFromCache() {
     const db = await initDB();
-    return new Promise((resolve) => {
-        const tx = db.transaction('hotposts_cache', 'readonly');
-        const store = tx.objectStore('hotposts_cache');
-        const request = store.getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => resolve([]);
+    return new Promise(resolve => {
+        const req = db.transaction('hotposts_cache', 'readonly').objectStore('hotposts_cache').getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve([]);
     });
 }
 
-// 🚀 NEW: Updates Cache Helpers
+// --- UPDATES CACHE ---
 export async function saveUpdatesToCache(updates) {
     const db = await initDB();
     const tx = db.transaction('updates_cache', 'readwrite');
-    const store = tx.objectStore('updates_cache');
-    store.clear(); 
-    updates.forEach(update => store.put(update));
+    tx.objectStore('updates_cache').clear(); 
+    updates.forEach(update => tx.objectStore('updates_cache').put(update));
 }
-
 export async function getUpdatesFromCache() {
     const db = await initDB();
-    return new Promise((resolve) => {
-        const tx = db.transaction('updates_cache', 'readonly');
-        const store = tx.objectStore('updates_cache');
-        const request = store.getAll();
-        request.onsuccess = () => resolve(request.result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
-        request.onerror = () => resolve([]);
+    return new Promise(resolve => {
+        const req = db.transaction('updates_cache', 'readonly').objectStore('updates_cache').getAll();
+        req.onsuccess = () => resolve(req.result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+        req.onerror = () => resolve([]);
+    });
+}
+
+// 🚀 NEW: SUGGESTIONS CACHE
+export async function saveSuggestionsToCache(users) {
+    const db = await initDB();
+    const tx = db.transaction('suggestions_cache', 'readwrite');
+    tx.objectStore('suggestions_cache').clear(); 
+    users.forEach(user => tx.objectStore('suggestions_cache').put(user));
+}
+export async function getSuggestionsFromCache() {
+    const db = await initDB();
+    return new Promise(resolve => {
+        const req = db.transaction('suggestions_cache', 'readonly').objectStore('suggestions_cache').getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve([]);
+    });
+}
+
+// 🚀 NEW: NOTIFICATIONS CACHE
+export async function saveNotificationsToCache(notifs) {
+    const db = await initDB();
+    const tx = db.transaction('notifications_cache', 'readwrite');
+    tx.objectStore('notifications_cache').clear(); 
+    notifs.forEach(notif => tx.objectStore('notifications_cache').put(notif));
+}
+export async function getNotificationsFromCache() {
+    const db = await initDB();
+    return new Promise(resolve => {
+        const req = db.transaction('notifications_cache', 'readonly').objectStore('notifications_cache').getAll();
+        req.onsuccess = () => resolve(req.result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+        req.onerror = () => resolve([]);
     });
 }
