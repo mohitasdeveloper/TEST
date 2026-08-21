@@ -225,14 +225,40 @@ window.executeContextualRefresh = async function() {
 window.refreshMyProfile = async function() {
     if (!currentUserProfile) return;
     try {
-        const { data: profile, error } = await supabase
+       // 2. Fetch user profile (Smart Offline Fallback)
+    let profile = null;
+
+    try {
+        const { data, error } = await supabase
             .from('users')
             .select('*')
-            .eq('id', currentUserProfile.id)
+            .eq('auth_user_id', session.user.id)
             .single();
+
+        if (error || !data) throw error;
         
-        if (error) throw error;
-        currentUserProfile = profile;
+        // Save to cache for offline use
+        profile = data;
+        localStorage.setItem('ecampus_profile_cache', JSON.stringify(profile));
+
+    } catch (error) {
+        console.error('Error fetching profile from DB:', error);
+        
+        // Try to load from offline cache
+        const cachedProfile = localStorage.getItem('ecampus_profile_cache');
+        if (cachedProfile) {
+            profile = JSON.parse(cachedProfile);
+            console.log("Loaded profile from offline cache.");
+        } else {
+            // Only sign out if we have NO internet AND NO cached profile
+            showToast('Could not load your profile. Please try logging in again.', 'error');
+            await supabase.auth.signOut();
+            window.location.replace('auth/login.html');
+            return;
+        }
+    }
+
+    currentUserProfile = profile;
         populateProfileUI(currentUserProfile); // This automatically calls fetchMyProfileFeed internally!
     } catch (err) {
         console.error("Error refreshing profile:", err);
