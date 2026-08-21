@@ -18,9 +18,21 @@ const STATIC_ASSETS = [
     './auth/main.js'
 ];
 
+// 1. Install & Cache Static Assets (Bulletproof Version)
 self.addEventListener('install', (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+        caches.open(CACHE_NAME).then(async (cache) => {
+            console.log('Caching assets one by one to prevent crashes...');
+            for (let asset of STATIC_ASSETS) {
+                try {
+                    // Try to cache the file
+                    await cache.add(asset);
+                } catch (e) {
+                    // If the file is missing on GitHub, just skip it and don't crash!
+                    console.warn(`Skipped missing asset: ${asset}`);
+                }
+            }
+        })
     );
     self.skipWaiting();
 });
