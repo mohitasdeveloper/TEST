@@ -38,21 +38,35 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
+// 3. Intercept Fetch Requests (Cache media & CDNs, handle offline)
 self.addEventListener('fetch', (event) => {
     const url = event.request.url;
 
-    // Ignore all Supabase database & auth requests (we handle offline manually)
-    if (url.includes('supabase.co/rest') || url.includes('supabase.co/auth')) return;
+    // Ignore all Supabase database, auth & realtime requests (we handle offline manually)
+    if (url.includes('supabase.co/rest') || url.includes('supabase.co/auth') || url.includes('supabase.co/realtime')) return;
 
     event.respondWith(
         caches.match(event.request).then((cachedResponse) => {
+            // Return cached version if we have it (Fonts, CSS, Icons)
             if (cachedResponse) return cachedResponse;
 
             return fetch(event.request).then((networkResponse) => {
-                // DYNAMIC MEDIA CACHING
-                if (url.includes('cloudinary.com') || url.includes('ui-avatars.com')) {
+                // 🚀 DYNAMIC CACHING: Save Media AND External UI Assets (Fonts, Tailwind, Icons)
+                const cacheableDomains = [
+                    'cloudinary.com',
+                    'ui-avatars.com',
+                    'fonts.googleapis.com',
+                    'fonts.gstatic.com',
+                    'cdn.tailwindcss.com',
+                    'cdnjs.cloudflare.com',
+                    'cdn.jsdelivr.net'
+                ];
+
+                if (cacheableDomains.some(domain => url.includes(domain))) {
                     const responseClone = networkResponse.clone();
-                    caches.open('ecampus-media-cache-v1').then((cache) => cache.put(event.request, responseClone));
+                    caches.open('ecampus-external-cache-v1').then((cache) => {
+                        cache.put(event.request, responseClone);
+                    });
                 }
                 return networkResponse;
             }).catch(() => {
