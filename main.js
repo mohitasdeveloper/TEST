@@ -1,7 +1,6 @@
 import { initHotposts } from './hotposts.js';
 import { showToast } from './ui.js';
-import { timeAgo } from './utils.js';
-import { supabase } from './supabase.js';
+import { timeAgo, getActionQueue, clearAction } from './utils.js'; // <-- Updatedimport { supabase } from './supabase.js';
 import { initFeed } from './feed.js';
 import { initSearch } from './search.js';
 import { initNotifications } from './notifications.js';
@@ -33,6 +32,46 @@ window.addEventListener('load', () => {
     }, 2000);
 });
 
+// 🚀 BACKGROUND SYNC PROCESSOR
+window.processOfflineQueue = async function() {
+    if (!navigator.onLine) return;
+    
+    const queue = await getActionQueue();
+    if (queue.length === 0) return;
+
+    let successCount = 0;
+    for (const action of queue) {
+        try {
+            if (action.type === 'like_post') {
+                if (action.payload.isLiked) await supabase.from('post_likes').delete().match({ post_id: action.payload.postId, user_id: action.payload.userId });
+                else await supabase.from('post_likes').insert({ post_id: action.payload.postId, user_id: action.payload.userId });
+            } 
+            else if (action.type === 'save_post') {
+                if (action.payload.isSaved) await supabase.from('saved_posts').delete().match({ post_id: action.payload.postId, user_id: action.payload.userId });
+                else await supabase.from('saved_posts').insert({ post_id: action.payload.postId, user_id: action.payload.userId });
+            }
+            else if (action.type === 'rsvp_event') {
+                if (action.payload.isCurrentlyAttending) await supabase.from('post_event_rsvps').delete().match({ post_id: action.payload.postId, user_id: action.payload.userId });
+                else await supabase.from('post_event_rsvps').insert({ post_id: action.payload.postId, user_id: action.payload.userId, status: 'attending' });
+            }
+            
+            // Remove from queue once successfully pushed to Supabase
+            await clearAction(action.id);
+            successCount++;
+        } catch (err) {
+            console.error("Queue process error:", err);
+        }
+    }
+    
+    if (successCount > 0) {
+        setTimeout(() => showToast(`Synced ${successCount} offline actions!`, 'success'), 1500);
+    }
+};
+
+// Trigger the sync when the device comes back online
+window.addEventListener('online', () => {
+    setTimeout(window.processOfflineQueue, 2000); 
+});
 // ==========================================
 // GLOBAL CLOUDINARY COMPRESSION ENGINE
 // ==========================================
@@ -433,6 +472,8 @@ function initializeApp(profile) {
     initSearch(profile);
     initNotifications(profile);
     initUpdates();
+
+    window.processOfflineQueue(); // <-- ADD THIS LINE HERE
 
     updateHeaderAvatar(profile.profile_img_url, profile.full_name);
     populateProfileUI(profile);
