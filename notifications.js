@@ -1,6 +1,6 @@
 import { supabase } from './supabase.js';
 import { showToast } from './ui.js';
-import { timeAgo } from './utils.js';
+import { timeAgo, saveNotificationsToCache, getNotificationsFromCache } from './utils.js'; // <-- NEW
 
 let currentUser = null;
 let allNotifications = [];
@@ -238,6 +238,21 @@ async function fetchNotifications() {
     document.getElementById('notifications-list-all').innerHTML = NOTIF_SKELETON;
     document.getElementById('notifications-list-requests').innerHTML = NOTIF_SKELETON;
 
+    // 🚀 OFFLINE INTERCEPTOR
+    if (!navigator.onLine) {
+        try {
+            const cachedNotifs = await getNotificationsFromCache();
+            allNotifications = cachedNotifs;
+            
+            const requests = cachedNotifs.filter(n => n.type === 'connection_request');
+            const general = cachedNotifs.filter(n => n.type !== 'connection_request');
+
+            renderList('notifications-list-all', general, "No recent activity.");
+            renderList('notifications-list-requests', requests, "No pending connection requests.");
+        } catch(e) { console.error(e); }
+        return;
+    }
+
     try {
         const { data, error } = await supabase
             .from('notifications')
@@ -269,6 +284,9 @@ async function fetchNotifications() {
         } else {
             reqBadge.classList.add('hidden');
         }
+
+        // 🚀 SAVE TO OFFLINE CACHE
+        saveNotificationsToCache(data);
 
     } catch (error) {
         console.error('Error fetching notifications:', error);
