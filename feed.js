@@ -149,6 +149,9 @@ export function initFeed(user) {
 
     document.querySelectorAll('.post-type-tab').forEach(tab => {
         tab.addEventListener('click', (e) => {
+            const type = e.currentTarget.dataset.type;
+            
+            // Visual Tab switching
             document.querySelectorAll('.post-type-tab').forEach(t => {
                 t.classList.remove('bg-primary', 'text-white');
                 t.classList.add('bg-surface-variant/50', 'dark:bg-surface-variant/10', 'text-on-surface-variant', 'dark:text-gray-300');
@@ -156,16 +159,30 @@ export function initFeed(user) {
             e.currentTarget.classList.remove('bg-surface-variant/50', 'dark:bg-surface-variant/10', 'text-on-surface-variant', 'dark:text-gray-300');
             e.currentTarget.classList.add('bg-primary', 'text-white');
             
+            // Show corresponding input section (Confession uses 'text' inputs)
             document.querySelectorAll('.post-input-section').forEach(sec => {
                 sec.classList.remove('block');
                 sec.classList.add('hidden');
             });
-            const targetSection = document.getElementById(`input-${e.currentTarget.dataset.type}`);
+            const targetSectionId = type === 'confession' ? 'input-text' : `input-${type}`;
+            const targetSection = document.getElementById(targetSectionId);
             if(targetSection) {
                 targetSection.classList.remove('hidden');
                 targetSection.classList.add('block');
             }
-            document.getElementById('current-post-type').value = e.currentTarget.dataset.type;
+            
+            document.getElementById('current-post-type').value = type;
+
+            // 🚀 NEW: Switch Identity UI for Confessions
+            if (type === 'confession') {
+                document.getElementById('create-post-name').innerHTML = 'Anonymous';
+                document.getElementById('create-post-avatar').src = 'https://ui-avatars.com/api/?name=Anonymous&background=121212&color=ffffff';
+                document.getElementById('post-expiry-value').value = 1;
+                document.getElementById('post-expiry-label').innerText = 'Expires in 1 Day';
+            } else {
+                document.getElementById('create-post-name').innerHTML = `${currentUser.full_name} ${getTickHtml(currentUser.tick_type)}`;
+                document.getElementById('create-post-avatar').src = currentUser.profile_img_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.full_name)}&background=e1e3e4`;
+            }
         });
     });
 }
@@ -234,7 +251,10 @@ async function uploadToCloudinary(file) {
 async function submitPost() {
     if (!window.checkVerification('create a post')) return;
     
-    const postType = document.getElementById('current-post-type').value;
+    const postTypeRaw = document.getElementById('current-post-type').value;
+    const isAnonymous = postTypeRaw === 'confession';
+    const postType = isAnonymous ? 'text' : postTypeRaw;
+
     const contentHTML = quillEditor ? quillEditor.root.innerHTML : '';
     const plainText = quillEditor ? quillEditor.getText().trim() : '';
     
@@ -248,7 +268,8 @@ async function submitPost() {
     btn.textContent = 'Publishing...';
 
     try {
-        const expiryDays = parseInt(document.getElementById('post-expiry-value').value) || 7;
+        // Force 1 Day Expiry for Confessions
+        const expiryDays = isAnonymous ? 1 : (parseInt(document.getElementById('post-expiry-value').value) || 7);
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + expiryDays);
 
@@ -265,6 +286,7 @@ async function submitPost() {
         let basePayload = { 
             user_id: currentUser.id, 
             post_type: postType, 
+            is_anonymous: isAnonymous,
             content: contentHTML,
             expires_at: expiresAt.toISOString(),
             viewers_access: viewersAccess,
@@ -272,7 +294,7 @@ async function submitPost() {
             hide_likes: document.getElementById('post-hide-likes')?.checked || false,
             disable_comments: document.getElementById('post-disable-comments')?.checked || false
         };
-
+        
         if (postType === 'image') {
             const fileInput = document.getElementById('post-image-upload');
             if (!fileInput.files[0]) throw new Error("Please select an image to upload.");
@@ -704,12 +726,23 @@ function renderPosts(posts, isRefresh = false) {
             `;
         }
 
-        const verifiedBadge = typeof getTickHtml === 'function' ? getTickHtml(user.tick_type) : '';
-        const rawAvatarUrl = user.profile_img_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name)}&background=e1e3e4`;
-        const optimizedAvatar = typeof optimizeImageUrl === 'function' ? optimizeImageUrl(rawAvatarUrl, 'avatar') : rawAvatarUrl;
-        const headerIcon = `<img loading="lazy" src="${optimizedAvatar}" data-user-id="${user.id}" class="profile-link w-8 h-8 rounded-full border border-surface-variant shadow-sm object-cover cursor-pointer hover:opacity-80 transition-opacity shrink-0">`;
+     let displayName = user.full_name;
+        let verifiedBadge = typeof getTickHtml === 'function' ? getTickHtml(user.tick_type) : '';
+        let rawAvatarUrl = user.profile_img_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name)}&background=e1e3e4`;
+        let profileAction = `data-user-id="${user.id}" class="profile-link font-bold text-[14px] text-on-surface dark:text-gray-100 leading-tight cursor-pointer hover:text-primary transition-colors flex items-center gap-1 truncate"`;
+        let avatarAction = `data-user-id="${user.id}" class="profile-link w-8 h-8 rounded-full border border-surface-variant shadow-sm object-cover cursor-pointer hover:opacity-80 transition-opacity shrink-0"`;
 
-        // 🚀 FIX: Robust empty post stripper (Removes invisible Quill spaces)
+        if (post.is_anonymous) {
+            displayName = 'Anonymous';
+            verifiedBadge = '';
+            rawAvatarUrl = `https://ui-avatars.com/api/?name=Anonymous&background=121212&color=ffffff`;
+            profileAction = `class="font-bold text-[14px] text-on-surface dark:text-gray-100 leading-tight cursor-default flex items-center gap-1 truncate"`;
+            avatarAction = `class="w-8 h-8 rounded-full border border-surface-variant shadow-sm object-cover cursor-default shrink-0"`;
+        }
+
+        const optimizedAvatar = typeof optimizeImageUrl === 'function' ? optimizeImageUrl(rawAvatarUrl, 'avatar') : rawAvatarUrl;
+        const headerIcon = `<img loading="lazy" src="${optimizedAvatar}" ${avatarAction}>`;
+
         let cleanCaptionContent = post.content || '';
         const plainTextCheck = cleanCaptionContent.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, '').trim();
         if (plainTextCheck === '' && !cleanCaptionContent.includes('<img') && !cleanCaptionContent.includes('<iframe')) {
@@ -724,7 +757,7 @@ function renderPosts(posts, isRefresh = false) {
         if (post.post_type === 'text') {
             if (cleanCaptionContent !== '') {
                 contentHtml = `<div class="px-4 py-8 mt-2 mb-2 bg-surface-variant/10 dark:bg-neutral-900/40 rounded-2xl mx-3 flex items-center justify-center border border-surface-variant/30 dark:border-neutral-800"><div class="text-[16px] sm:text-[18px] font-medium text-on-surface dark:text-gray-100 leading-relaxed whitespace-pre-wrap rich-text-content text-center w-full">${cleanCaptionContent}</div></div>`;
-                cleanCaptionContent = ''; // Clear it so it doesn't render twice
+                cleanCaptionContent = ''; 
             }
         }
         else if (post.post_type === 'image') {
@@ -783,9 +816,8 @@ function renderPosts(posts, isRefresh = false) {
                 
                 isPollActive = !isExpired; 
                 
-                // 🚀 FIX: Separated Results (Percentages) from Quiz Answers (Green/Red Highlights)
                 const showResults = userHasVoted || isExpired || isAuthor;
-                const showQuizAnswers = userHasVoted || isExpired; // Hide answers from author until they vote or it ends
+                const showQuizAnswers = userHasVoted || isExpired;
 
                 const isQuiz = poll.is_quiz;
                 const correctOptId = poll.correct_option_id;
@@ -815,7 +847,6 @@ function renderPosts(posts, isRefresh = false) {
                     let optBgClass = 'bg-surface-variant/30 dark:bg-surface-variant/10';
                     let checkIconHtml = '';
 
-                    // 🚀 FIX: Only show green/red highlights if showQuizAnswers is true
                     if (isQuiz && showQuizAnswers) {
                         if (opt.id === correctOptId) {
                             optBorderClass = 'border-green-500';
@@ -869,7 +900,7 @@ function renderPosts(posts, isRefresh = false) {
                 }).join('');
 
                 let extraInfoHtml = '';
-                if (showQuizAnswers && poll.extra_info) { // 🚀 FIX: Explanation only shows when voted/ended
+                if (showQuizAnswers && poll.extra_info) {
                     extraInfoHtml = `
                         <div class="mt-3 bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-[12.5px] text-on-surface dark:text-gray-200 animate-fadeIn">
                             <span class="font-extrabold text-blue-600 dark:text-blue-400 block mb-0.5">${isQuiz ? 'Explanation' : 'Note'}</span>
@@ -909,7 +940,6 @@ function renderPosts(posts, isRefresh = false) {
             }
         }
 
-        // 🚀 Skip rendering if it's an empty, broken post
         if (contentHtml === '' && cleanCaptionContent === '' && post.post_type === 'text') return '';
 
         let topCaptionHtml = '';
@@ -917,7 +947,7 @@ function renderPosts(posts, isRefresh = false) {
 
         if (cleanCaptionContent !== '') {
             if (post.post_type === 'image') {
-                bottomCaptionHtml = `<div class="px-3 text-[14px] text-on-surface dark:text-gray-100 leading-snug mt-1.5 mb-1"><span data-user-id="${user.id}" class="profile-link font-bold mr-1 cursor-pointer hover:underline">${user.full_name}</span><span class="rich-text-content inline">${cleanCaptionContent}</span></div>`;
+                bottomCaptionHtml = `<div class="px-3 text-[14px] text-on-surface dark:text-gray-100 leading-snug mt-1.5 mb-1"><span ${profileAction} class="font-bold mr-1 cursor-pointer hover:underline inline">${displayName}</span><span class="rich-text-content inline">${cleanCaptionContent}</span></div>`;
             } else {
                 topCaptionHtml = `<div class="px-3 text-[15px] text-on-surface dark:text-gray-100 leading-snug mt-2 mb-1"><span class="rich-text-content inline">${cleanCaptionContent}</span></div>`;
             }
@@ -930,7 +960,7 @@ function renderPosts(posts, isRefresh = false) {
             <div class="flex items-center gap-3 px-3 py-2">
                 ${headerIcon}
                 <div class="flex-1 min-w-0">
-                    <h4 data-user-id="${user.id}" class="profile-link font-bold text-[14px] text-on-surface dark:text-gray-100 leading-tight cursor-pointer hover:text-primary transition-colors flex items-center gap-1 truncate">${user.full_name} ${verifiedBadge}</h4>
+                    <h4 ${profileAction}>${displayName} ${verifiedBadge}</h4>
                 </div>
                 <button data-post-id="${post.id}" data-user-id="${user.id}" data-is-verified="${post.is_verified}" data-hide-likes="${post.hide_likes}" data-disable-comments="${post.disable_comments}" data-is-archived="${post.is_archived || false}" data-post-type="${post.post_type}" data-is-poll-active="${isPollActive}" class="post-options-btn text-on-surface dark:text-gray-100 p-1.5 active:opacity-60 transition-opacity">
                     <span class="material-symbols-outlined text-[20px]">more_vert</span>
@@ -950,9 +980,11 @@ function renderPosts(posts, isRefresh = false) {
                         <span class="material-symbols-outlined text-[26px]" style="transform: scaleX(-1);">chat_bubble_outline</span> 
                     </button>` : ''}
                 </div>
+                ${!post.is_anonymous ? `
                 <button onclick="window.handleSavePost('${post.id}', this)" data-post-id="${post.id}" data-saved="${isSaved}" class="save-btn flex items-center justify-center transition-all duration-200 active:scale-75 ${isSaved ? 'text-primary hover:text-primary/80' : 'text-on-surface dark:text-gray-100 hover:opacity-70'}">
                     <span class="material-symbols-outlined text-[28px]" style="font-variation-settings: 'FILL' ${isSaved ? 1 : 0};">bookmark</span>
                 </button>
+                ` : '<div></div>'}
             </div>
             
             ${likeCount > 0 ? `<div class="px-3 mb-1 text-[14px] text-on-surface dark:text-gray-100">${likedByHtml}</div>` : ''}
