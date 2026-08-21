@@ -1,6 +1,6 @@
 import { initHotposts } from './hotposts.js';
 import { showToast } from './ui.js';
-import { timeAgo, getActionQueue, clearAction } from './utils.js';
+import { timeAgo, getActionQueue, clearAction, getFeedFromCache } from './utils.js';
 import { supabase } from './supabase.js';
 import { initFeed } from './feed.js';
 import { initSearch } from './search.js';
@@ -55,6 +55,17 @@ window.processOfflineQueue = async function() {
                 if (action.payload.isCurrentlyAttending) await supabase.from('post_event_rsvps').delete().match({ post_id: action.payload.postId, user_id: action.payload.userId });
                 else await supabase.from('post_event_rsvps').insert({ post_id: action.payload.postId, user_id: action.payload.userId, status: 'attending' });
             }
+            else if (action.type === 'comment_post') {
+                await supabase.from('post_comments').insert(action.payload);
+            }
+            else if (action.type === 'poll_vote') {
+                await supabase.rpc('cast_poll_vote', {
+                    p_post_id: action.payload.postId,
+                    p_user_id: action.payload.userId,
+                    p_option_id: String(action.payload.optionId),
+                    p_is_undo: action.payload.isUndo
+                });
+            }
             
             // Remove from queue once successfully pushed to Supabase
             await clearAction(action.id);
@@ -65,7 +76,10 @@ window.processOfflineQueue = async function() {
     }
     
     if (successCount > 0) {
-        setTimeout(() => showToast(`Synced ${successCount} offline actions!`, 'success'), 1500);
+        setTimeout(() => {
+            showToast(`Synced ${successCount} offline actions!`, 'success');
+            if (typeof window.executeContextualRefresh === 'function') window.executeContextualRefresh();
+        }, 1500);
     }
 };
 
@@ -752,6 +766,30 @@ window.fetchMyProfileFeed = async function(userId) {
 
     feedContainer.innerHTML = FEED_SKELETON; 
     
+    // 🚀 OFFLINE INTERCEPTOR for Profile Feed
+    if (!navigator.onLine) {
+        try {
+            const cachedPosts = await getFeedFromCache();
+            // Filter the cached feed for only this user's posts
+            const myPosts = cachedPosts.filter(post => post.user_id === userId);
+            
+            if (myPosts.length === 0) {
+                feedContainer.innerHTML = `
+                    <div class="py-12 flex flex-col items-center justify-center opacity-40 text-on-surface-variant">
+                        <span class="material-symbols-outlined text-[42px] mb-2">cloud_off</span>
+                        <p class="text-sm font-medium">No cached posts for this profile.</p>
+                    </div>`;
+                return;
+            }
+            feedContainer.innerHTML = generatePostHTML(myPosts, currentUserProfile.id);
+            const countEl = document.getElementById('my-profile-posts-count');
+            if (countEl) countEl.textContent = myPosts.length;
+        } catch (e) {
+            console.error("Offline profile feed error:", e);
+        }
+        return;
+    }
+
     try {
         const { data: posts, error } = await supabase
             .from('posts')
