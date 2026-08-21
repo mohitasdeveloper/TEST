@@ -415,33 +415,48 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    // 2. Fetch user profile (Smart Offline Fallback)
+   // 2. Fetch user profile (Instant Offline Short-Circuit)
     let profile = null;
 
-    try {
-        const { data, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('auth_user_id', session.user.id)
-            .single();
-
-        if (error || !data) throw error;
-        
-        profile = data;
-        localStorage.setItem('ecampus_profile_cache', JSON.stringify(profile));
-
-    } catch (error) {
-        console.error('Error fetching profile from DB:', error);
-        
-        // If offline, silently load the cached profile
+    if (!navigator.onLine) {
+        // 🚀 INSTANT OFFLINE BOOT: Skip the network completely to prevent the 30-second hang
         const cachedProfile = localStorage.getItem('ecampus_profile_cache');
         if (cachedProfile) {
             profile = JSON.parse(cachedProfile);
+            console.log("Loaded profile instantly from offline cache.");
         } else {
-            // ONLY log out if there is no internet AND no cache exists on the phone
-            await supabase.auth.signOut();
-            window.location.replace('./auth/login.html');
-            return;
+            showToast('Could not load your profile. Please reconnect to the internet.', 'error');
+            return; // Halt boot, but don't log them out!
+        }
+    } else {
+        // NORMAL ONLINE BOOT
+        try {
+            const { data, error } = await supabase
+                .from('users')
+                .select('*')
+                .eq('auth_user_id', session.user.id)
+                .single();
+
+            if (error || !data) throw error;
+            
+            // Save to cache for offline use
+            profile = data;
+            localStorage.setItem('ecampus_profile_cache', JSON.stringify(profile));
+
+        } catch (error) {
+            console.error('Error fetching profile from DB:', error);
+            
+            // Try to load from offline cache as a last resort
+            const cachedProfile = localStorage.getItem('ecampus_profile_cache');
+            if (cachedProfile) {
+                profile = JSON.parse(cachedProfile);
+                console.log("Loaded profile from offline cache after network failure.");
+            } else {
+                showToast('Could not load your profile. Please try logging in again.', 'error');
+                await supabase.auth.signOut();
+                window.location.replace('auth/login.html');
+                return;
+            }
         }
     }
 
