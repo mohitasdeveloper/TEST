@@ -1,6 +1,6 @@
 import { supabase } from './supabase.js';
 import { showToast } from './ui.js';
-import { timeAgo, compressImage, saveFeedToCache, getFeedFromCache } from './utils.js';
+import { timeAgo, compressImage, saveFeedToCache, getFeedFromCache, queueOfflineAction } from './utils.js'; // <-- Updated
 import { CLOUDINARY_CLOUD_NAME } from './config.js';
 
 let currentUser = null;
@@ -1019,12 +1019,19 @@ window.handleLike = async function(postId, btnElement) {
             setTimeout(() => postCard.remove(), 300);
         }
     }
+    
     try {
-        if (!nextLikedState) {
-            await supabase.from('post_likes').delete().match({ post_id: postId, user_id: currentUser.id });
+        if (!navigator.onLine) {
+            // 🚀 OFFLINE QUEUE
+            await queueOfflineAction('like_post', { postId, userId: currentUser.id, isLiked });
         } else {
-            const { error } = await supabase.from('post_likes').insert({ post_id: postId, user_id: currentUser.id });
-            if (error && error.code !== '23505') throw error; 
+            // NORMAL ONLINE SYNC
+            if (!nextLikedState) {
+                await supabase.from('post_likes').delete().match({ post_id: postId, user_id: currentUser.id });
+            } else {
+                const { error } = await supabase.from('post_likes').insert({ post_id: postId, user_id: currentUser.id });
+                if (error && error.code !== '23505') throw error; 
+            }
         }
     } catch (error) {
         console.error("Like error:", error);
@@ -2110,18 +2117,31 @@ window.handleRSVP = async function(postId, isCurrentlyAttending) {
     if (postEl) postEl.style.opacity = '0.6';
 
     try {
-        if (isCurrentlyAttending) {
-            const { error } = await supabase.from('post_event_rsvps').delete().match({ post_id: postId, user_id: currentUser.id });
-            if (error) throw error;
-            showToast('RSVP Cancelled', 'info');
+        if (!navigator.onLine) {
+            // 🚀 OFFLINE QUEUE
+            await queueOfflineAction('rsvp_event', { postId, userId: currentUser.id, isCurrentlyAttending });
+            showToast(isCurrentlyAttending ? 'RSVP Cancelled (Saved Offline)' : 'RSVP Confirmed (Saved Offline)', 'info');
+            
+            // Optimistic UI update for offline mode
+            const btn = postEl.querySelector('button[onclick^="window.handleRSVP"]');
+            if (btn) {
+                const nowAttending = !isCurrentlyAttending;
+                btn.className = `block w-full mt-3 ${nowAttending ? 'bg-surface-variant/50 text-on-surface dark:text-gray-100' : 'bg-primary text-white'} text-center py-2 rounded-xl text-[13px] font-bold active:scale-95 transition-all`;
+                btn.textContent = nowAttending ? '✓ Attending' : 'RSVP Now';
+                btn.setAttribute('onclick', `window.handleRSVP('${postId}', ${nowAttending})`);
+            }
         } else {
-            const { error } = await supabase.from('post_event_rsvps').insert({ post_id: postId, user_id: currentUser.id, status: 'attending' });
-            if (error) throw error;
-            showToast('RSVP Confirmed!', 'success');
-        }
-
-        if (typeof window.refreshMainFeed === 'function') {
-            await window.refreshMainFeed(); 
+            // NORMAL ONLINE SYNC
+            if (isCurrentlyAttending) {
+                const { error } = await supabase.from('post_event_rsvps').delete().match({ post_id: postId, user_id: currentUser.id });
+                if (error) throw error;
+                showToast('RSVP Cancelled', 'info');
+            } else {
+                const { error } = await supabase.from('post_event_rsvps').insert({ post_id: postId, user_id: currentUser.id, status: 'attending' });
+                if (error) throw error;
+                showToast('RSVP Confirmed!', 'success');
+            }
+            if (typeof window.refreshMainFeed === 'function') await window.refreshMainFeed(); 
         }
 
     } catch (error) {
@@ -2191,10 +2211,16 @@ window.handleSavePost = async function(postId, btnElement) {
     }
 
     try {
-        if (!nextSavedState) {
-            await supabase.from('saved_posts').delete().match({ post_id: postId, user_id: activeUser.id });
+        if (!navigator.onLine) {
+            // 🚀 OFFLINE QUEUE
+            await queueOfflineAction('save_post', { postId, userId: activeUser.id, isSaved });
         } else {
-            await supabase.from('saved_posts').insert({ post_id: postId, user_id: activeUser.id });
+            // NORMAL ONLINE SYNC
+            if (!nextSavedState) {
+                await supabase.from('saved_posts').delete().match({ post_id: postId, user_id: activeUser.id });
+            } else {
+                await supabase.from('saved_posts').insert({ post_id: postId, user_id: activeUser.id });
+            }
         }
     } catch(e) { console.error("Save error:", e); }
     finally { setTimeout(() => { window._saveLocks[postId] = false; }, 300); }
