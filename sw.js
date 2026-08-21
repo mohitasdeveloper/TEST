@@ -12,19 +12,19 @@ const STATIC_ASSETS = [
     './utils.js',
     './ui.js',
     './config.js',
-    './supabase.js'
+    './supabase.js',
+    './auth/login.html',
+    './auth/style.css',
+    './auth/main.js'
 ];
-// 1. Install & Cache Static Assets
+
 self.addEventListener('install', (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(STATIC_ASSETS);
-        })
+        caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
     );
     self.skipWaiting();
 });
 
-// 2. Activate & Clean Up Old Caches
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((cacheNames) => {
@@ -38,34 +38,29 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// 3. Intercept Fetch Requests (Cache media, handle offline)
 self.addEventListener('fetch', (event) => {
     const url = event.request.url;
 
-    // Ignore Supabase API calls (we cache the JSON using IndexedDB)
-    if (url.includes('supabase.co/rest')) return;
+    // Ignore all Supabase database & auth requests (we handle offline manually)
+    if (url.includes('supabase.co/rest') || url.includes('supabase.co/auth')) return;
 
     event.respondWith(
         caches.match(event.request).then((cachedResponse) => {
-            // Return cached version if we have it
             if (cachedResponse) return cachedResponse;
 
-            // Otherwise, fetch from the network
             return fetch(event.request).then((networkResponse) => {
-                // 🚀 DYNAMIC MEDIA CACHING: If it's an image/video from Cloudinary or UI-Avatars, save a copy!
+                // DYNAMIC MEDIA CACHING
                 if (url.includes('cloudinary.com') || url.includes('ui-avatars.com')) {
                     const responseClone = networkResponse.clone();
-                    caches.open('ecampus-media-cache-v1').then((cache) => {
-                        cache.put(event.request, responseClone);
-                    });
+                    caches.open('ecampus-media-cache-v1').then((cache) => cache.put(event.request, responseClone));
                 }
                 return networkResponse;
             }).catch(() => {
-                // 🚀 CRASH FIX: Return fallback responses when completely offline
+                // ROUTE FALLBACKS WHEN OFFLINE
                 if (event.request.mode === 'navigate') {
+                    if (url.includes('/auth/login.html')) return caches.match('./auth/login.html');
                     return caches.match('./index.html');
                 }
-                // Return a dummy empty response to prevent "TypeError: Failed to convert value to Response"
                 return new Response('', { status: 503, statusText: 'Offline' });
             });
         })
