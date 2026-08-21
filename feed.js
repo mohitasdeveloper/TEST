@@ -531,6 +531,9 @@ window.dismissSuggestion = function(btn) {
 };
 
 async function fetchUserSuggestions() {
+    // 🚀 NEW: Don't try to fetch suggestions if offline
+    if (!navigator.onLine) return []; 
+
     try {
         // 1. Find everyone we are already connected with, have pending requests with, or blocked (Students)
         const { data: connData } = await supabase
