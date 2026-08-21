@@ -1049,22 +1049,29 @@ window.handlePollVote = async function(postId, optionId, isUndo) {
     if (postEl) postEl.style.opacity = '0.6';
 
     try {
-        const { error } = await supabase.rpc('cast_poll_vote', {
-            p_post_id: postId,
-            p_user_id: currentUser.id, // 🚀 NEW: Explicitly pass the correct public profile ID
-            p_option_id: String(optionId),
-            p_is_undo: isUndo
-        });
+        if (!navigator.onLine) {
+            // 🚀 OFFLINE QUEUE
+            await queueOfflineAction('poll_vote', { postId, userId: currentUser.id, optionId, isUndo });
+            import('./ui.js').then(({ showToast }) => showToast(isUndo ? 'Vote removal saved offline.' : 'Vote saved offline.', 'info'));
+        } else {
+            // NORMAL ONLINE SYNC
+            const { error } = await supabase.rpc('cast_poll_vote', {
+                p_post_id: postId,
+                p_user_id: currentUser.id, 
+                p_option_id: String(optionId),
+                p_is_undo: isUndo
+            });
 
-        if (error) {
-            import('./ui.js').then(({ showToast }) => showToast(error.message, 'error'));
-            throw error;
-        }
+            if (error) {
+                import('./ui.js').then(({ showToast }) => showToast(error.message, 'error'));
+                throw error;
+            }
 
-        if (typeof window.updatePollUI === 'function') {
-            await window.updatePollUI(postId);
-        } else if (typeof window.refreshMainFeed === 'function') {
-            await window.refreshMainFeed(); 
+            if (typeof window.updatePollUI === 'function') {
+                await window.updatePollUI(postId);
+            } else if (typeof window.refreshMainFeed === 'function') {
+                await window.refreshMainFeed(); 
+            }
         }
     } catch (error) {
         console.error("Poll vote error:", error);
@@ -1784,37 +1791,53 @@ async function submitComment(postId) {
     };
     if (activeReplyCommentId) payload.parent_comment_id = activeReplyCommentId;
 
-    const { error } = await supabase.from('post_comments').insert(payload);
-
-    if (error) {
-        showToast('Failed to post comment.', 'error');
-    } else {
-        if (input) {
-            input.value = '';
-            input.style.height = 'auto';
-        }
-        window.cancelReply();
-        currentMentionIds = [];
-        
-        openCommentsModal(postId); 
-        
-        const commentBtns = document.querySelectorAll(`.comment-btn[data-post-id="${postId}"]`);
-        commentBtns.forEach(commentBtn => {
-            const html = commentBtn.innerHTML;
-            if (html.includes('View')) {
-                const countMatch = html.match(/\d+/);
-                if (countMatch) {
-                    commentBtn.innerHTML = `View all ${parseInt(countMatch[0]) + 1} comments`;
-                } else if (html.includes('View 1 comment')) {
-                    commentBtn.innerHTML = `View all 2 comments`;
-                }
+    try {
+        if (!navigator.onLine) {
+            // 🚀 OFFLINE QUEUE
+            await queueOfflineAction('comment_post', payload);
+            import('./ui.js').then(({ showToast }) => showToast('Comment saved offline. Will post when reconnected.', 'info'));
+            
+            if (input) {
+                input.value = '';
+                input.style.height = 'auto';
             }
-        });
-    }
-    
-    if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = 'Post';
+            window.cancelReply();
+            currentMentionIds = [];
+            window.closeCommentsModal();
+        } else {
+            // NORMAL ONLINE SYNC
+            const { error } = await supabase.from('post_comments').insert(payload);
+            if (error) throw error;
+
+            if (input) {
+                input.value = '';
+                input.style.height = 'auto';
+            }
+            window.cancelReply();
+            currentMentionIds = [];
+            
+            openCommentsModal(postId); 
+            
+            const commentBtns = document.querySelectorAll(`.comment-btn[data-post-id="${postId}"]`);
+            commentBtns.forEach(commentBtn => {
+                const html = commentBtn.innerHTML;
+                if (html.includes('View')) {
+                    const countMatch = html.match(/\d+/);
+                    if (countMatch) {
+                        commentBtn.innerHTML = `View all ${parseInt(countMatch[0]) + 1} comments`;
+                    } else if (html.includes('View 1 comment')) {
+                        commentBtn.innerHTML = `View all 2 comments`;
+                    }
+                }
+            });
+        }
+    } catch (error) {
+        import('./ui.js').then(({ showToast }) => showToast('Failed to post comment.', 'error'));
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = 'Post';
+        }
     }
 }
 
