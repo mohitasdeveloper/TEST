@@ -11,7 +11,7 @@ import { CLOUDINARY_CLOUD_NAME, CLOUDINARY_AVATARS_PRESET } from './config.js';
 let currentUserProfile = null;
 window.addEventListener('load', () => {
     // 1. Initialize the Pull-to-Refresh Engine
-    // This allows the user to drag down to refresh the feed
+    // This allows the user to drag down to refresh
     if (typeof initPullToRefresh === 'function') {
         initPullToRefresh();
     }
