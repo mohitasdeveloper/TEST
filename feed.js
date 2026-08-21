@@ -2363,7 +2363,8 @@ window.setPollDeadline = function(val, label) {
 // 🚀 SUPABASE REALTIME ENGINE
 // ==========================================
 function setupRealtimeFeed() {
-    if (!currentUser) return;
+    // 🚀 NEW: Disable realtime WebSockets if offline
+    if (!currentUser || !navigator.onLine) return;
 
     // Listen for new rows inserted into the 'posts' table
     supabase
