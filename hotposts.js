@@ -1,6 +1,6 @@
 import { supabase } from './supabase.js';
 import { showToast } from './ui.js';
-import { timeAgo } from './utils.js';
+import { timeAgo, saveHotpostsToCache, getHotpostsFromCache } from './utils.js';
 import { CLOUDINARY_CLOUD_NAME, CLOUDINARY_HOTPOSTS_PRESET } from './config.js';
 
 // ==========================================
@@ -1606,12 +1606,26 @@ async function fetchHotposts() {
     
     if (!isUploadingBackground) container.innerHTML = HOTPOST_SKELETON;
 
+    // 🚀 OFFLINE INTERCEPTOR
+    if (!navigator.onLine) {
+        try {
+            const cachedHotposts = await getHotpostsFromCache();
+            if (cachedHotposts.length > 0) {
+                // Reconstruct the Map from the saved array
+                hotpostsByUser = new Map(cachedHotposts.map(item => [item.user_id, item.data]));
+                renderHotpostCircles();
+            } else {
+                container.innerHTML = `<div class="py-4 text-center text-xs text-on-surface-variant">No saved hotposts</div>`;
+            }
+        } catch (e) { console.error("Offline hotposts error:", e); }
+        return;
+    }
+
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     
     try {
         const blockedIds = await window.getBlockedUserIds(currentUser.id);
 
-        // 🚀 FIX: Fetch approved connections first to enforce privacy
         const { data: myConns } = await supabase.from('connections')
             .select('user_one_id, user_two_id')
             .eq('status', 'accepted')
@@ -1641,12 +1655,7 @@ async function fetchHotposts() {
 
         const unviewedData = data.filter(post => {
             if (post.user_id === currentUser.id) return true; 
-            
-            // 🚀 FIX: Strictly enforce "Connections Only" visibility
-            if (post.visibility === 'connections' && !myConnectionIds.has(post.user_id)) {
-                return false; 
-            }
-
+            if (post.visibility === 'connections' && !myConnectionIds.has(post.user_id)) return false; 
             const hasViewed = post.hotpost_views.some(v => v.viewer_id === currentUser.id);
             if (!hasViewed) return true; 
             if (hasViewed && post.allow_rewatch) return true; 
@@ -1669,6 +1678,11 @@ async function fetchHotposts() {
         }
 
         renderHotpostCircles();
+
+        // 🚀 SAVE TO OFFLINE CACHE
+        const cacheArray = Array.from(hotpostsByUser.entries()).map(([userId, data]) => ({ user_id: userId, data: data }));
+        saveHotpostsToCache(cacheArray);
+
     } catch (e) {
         console.error("Hotposts fetch error:", e);
     }
